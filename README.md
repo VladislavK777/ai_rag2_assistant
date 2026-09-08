@@ -52,7 +52,6 @@ curl -X POST http://localhost:8000/api/v1/ingest/upload \
 
 # 6. Открыть UI
 open http://localhost:5173
-```
 
 Подробная инструкция по развёртыванию: **[infra/README.md](infra/README.md)** (включая вариант Yandex Cloud).
 
@@ -90,4 +89,3 @@ cd backend && pytest -v
 
 # Нагрузочный (k6) — методика и результаты в docs/Нагрузочный_отчёт.md
 k6 run backend/tests/load/k6_chat.js
-```
