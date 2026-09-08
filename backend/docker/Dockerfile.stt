@@ -1,0 +1,16 @@
+FROM python:3.13-slim
+
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+
+# CUDA runtime для NeMo STT
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg curl && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /srv
+COPY pyproject.toml .
+RUN pip install --no-cache-dir ".[stt]"
+
+COPY app ./app
+
+EXPOSE 8080
+CMD ["python", "-m", "app.services.stt_server"]

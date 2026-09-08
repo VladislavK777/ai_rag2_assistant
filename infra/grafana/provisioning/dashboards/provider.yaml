@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: rag2-dashboards
+    orgId: 1
+    folder: RAG2
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards

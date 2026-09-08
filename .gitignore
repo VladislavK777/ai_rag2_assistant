@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+dist/
+
+# Node
+node_modules/
+dist/
+
+# Секреты и окружение
+.env
+*.pem
+*.key
+infra/nginx/certs/
+
+# Данные
+*.sqlite3
+hf_cache/
+backups/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Локальная папка (личные материалы, не для репозитория)
+local/

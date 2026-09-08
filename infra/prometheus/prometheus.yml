@@ -1,0 +1,48 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Backend FastAPI: метрики приложения + инструментация (ASGI /metrics/)
+  - job_name: rag2-backend
+    metrics_path: /metrics/
+    static_configs:
+      - targets: ["backend:8000"]
+
+  # OTel Collector: собственная телеметрия пайплайна
+  # (метрики приложений приходят отдельно через remote write)
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8888"]
+
+  # Qdrant (в сети data). /metrics закрыт api-key — Qdrant не принимает
+  # Authorization-заголовок Prometheus на этом endpoint'е стабильно,
+  # поэтому отдельный джоб убран; телеметрия Qdrant — через /telemetry
+  # (нет Prometheus-формата) или sidecar-экспортер (Фаза 2).
+  # Рабочий вариант проверен вручную: wget --header="api-key: $KEY" → 200.
+  #- job_name: qdrant
+  #  metrics_path: /metrics
+  #  authorization:
+  #    type: api-key
+  #    credentials: "$QDRANT_API_KEY"
+  #  static_configs:
+  #    - targets: ["qdrant:6333"]
+
+  # Глубина очереди ingestion (queue-exporter, :9808)
+  - job_name: rag2-queue
+    static_configs:
+      - targets: ["queue-exporter:9808"]
+
+  # ---- GPU-профиль (раскомментировать при --profile gpu) ----
+  # - job_name: vllm
+  #   static_configs:
+  #     - targets: ["vllm:8000"]
+  # - job_name: rag2-workers-stt
+  #   static_configs:
+  #     - targets: ["stt-worker:9808"]
+  # - job_name: gpu
+  #   static_configs:
+  #     - targets: ["host.docker.internal:9400"]
+
+  # ---- Фаза 2: экспортеры инфраструктуры ----
+  # postgres-exporter (9187), redis-exporter (9121), celery-exporter (9808)
