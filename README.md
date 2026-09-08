@@ -9,7 +9,7 @@ AI-ассистент для 4 000+ сотрудников на полность
 | Каталог | Содержимое |
 |---|---|
 | `docs/` | Полный пакет проектной документации (ADR-000 и ADR, C4-модель, ТЗ, сайзинг, нагрузочный отчёт, ROI) |
-| `docs/adr/` | Architecture Decision Records: [ADR-000](docs/adr/ADR-000_контекст_и_обоснование.md) … ADR-007 |
+| `docs/adr/` | Architecture Decision Records: [ADR-000](docs/adr/ADR-000_контекст_и_обоснование.md) - [ADR-007](docs/adr/ADR-007_Модель_данных.md) |
 | `docs/c4/` | Диаграммы C4 L1–L3, Deployment, Sequence, ER (Mermaid) |
 | `infra/` | Docker Compose для MVP + Helm values / Terraform-схема для Yandex Cloud |
 | `backend/` | Python 3.12 / FastAPI / LangGraph — агенты, RAG, Guardrails, API |
@@ -61,17 +61,17 @@ open http://localhost:5173
 |---|---|---|
 | LLM Serving | vLLM 0.28 + Qwen2.5-14B-Instruct-AWQ | [ADR-002](docs/adr/ADR-002_LLM_Serving.md) |
 | Embeddings | BGE-M3 (dense + sparse, 1024d) | [ADR-003](docs/adr/ADR-003_Vector_DB_и_Embeddings.md) |
-| Reranker | BGE-reranker-v2-m3 | ADR-003 |
-| Vector DB | Qdrant 1.19 (self-hosted) | ADR-003 |
+| Reranker | BGE-reranker-v2-m3 | [ADR-003](docs/adr/ADR-003_Vector_DB_и_Embeddings.md) |
+| Vector DB | Qdrant 1.19 (self-hosted) | [ADR-003](docs/adr/ADR-003_Vector_DB_и_Embeddings.md) |
 | Orchestration | LangGraph 1.2 (Stateful Agent) | [ADR-004](docs/adr/ADR-004_Оркестрация_и_когнитивная_архитектура.md) |
-| STT | GigaAM v2 CTC (русский, NVIDIA NeMo) | ADR-002 |
+| STT | GigaAM v2 CTC (русский, NVIDIA NeMo) | [ADR-002](docs/adr/ADR-002_LLM_Serving.md) |
 | Guardrails | Llama Guard 3 8B + Presidio PII + regex | [ADR-006](docs/adr/ADR-006_Guardrails_и_безопасность.md) |
 | API Gateway | Kong 3.x | [ADR-001](docs/adr/ADR-001_Общий_стиль_архитектуры.md) |
-| БД | PostgreSQL 18 (метаданные, RBAC, сессии) | ADR-007 |
+| БД | PostgreSQL 18 (метаданные, RBAC, сессии) | [ADR-007](docs/adr/ADR-007_Модель_данных.md) |
 | Observability | OpenTelemetry + Prometheus + Grafana + Loki | [ADR-005](docs/adr/ADR-005_Наблюдаемость_и_логирование.md) |
-| Secrets | HashiCorp Vault | ADR-001 |
-| Backend | Python 3.13, FastAPI, Pydantic v2 | ADR-001 |
-| Frontend | React 19 + Vite 8 + TypeScript | ADR-001 |
+| Secrets | HashiCorp Vault | [ADR-001](docs/adr/ADR-001_Общий_стиль_архитектуры.md) |
+| Backend | Python 3.13, FastAPI, Pydantic v2 | [ADR-001](docs/adr/ADR-001_Общий_стиль_архитектуры.md) |
+| Frontend | React 19 + Vite 8 + TypeScript | [ADR-001](docs/adr/ADR-001_Общий_стиль_архитектуры.md) |
 
 ## Критерии приёмки (как проверяем)
 
