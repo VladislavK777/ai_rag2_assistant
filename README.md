@@ -9,7 +9,7 @@ AI-ассистент для 4 000+ сотрудников на полность
 | Каталог | Содержимое |
 |---|---|
 | `docs/` | Полный пакет проектной документации (ADR-000 и ADR, C4-модель, ТЗ, сайзинг, нагрузочный отчёт, ROI) |
-| `docs/adr/` | Architecture Decision Records: [ADR-000](docs/adr/ADR-000_контекст_и_обоснование.md) - [ADR-007](docs/adr/ADR-007_Модель_данных.md) |
+| `docs/adr/` | Architecture Decision Records: ADR-000 - ADR-007 |
 | `docs/c4/` | Диаграммы C4 L1–L3, Deployment, Sequence, ER (Mermaid) |
 | `infra/` | Docker Compose для MVP + Helm values / Terraform-схема для Yandex Cloud |
 | `backend/` | Python 3.12 / FastAPI / LangGraph — агенты, RAG, Guardrails, API |
