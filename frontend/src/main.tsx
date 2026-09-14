@@ -13,7 +13,10 @@ import {
   clearToken,
   documentStatus,
   getToken,
+  initAuth,
+  isTokenValid,
   login,
+  logout,
   uploadDocument,
 } from "./api";
 
@@ -40,41 +43,27 @@ function initials(name: string): string {
   return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || "?";
 }
 
-// ---------- Логин ----------
+// ---------- Логин (SSO Keycloak) ----------
 
-function LoginCard(props: { onLogin: (email: string, password: string) => void; error: string; busy: boolean }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
+function LoginScreen(props: { onLogin: () => void; error: string; busy: boolean }) {
   return (
-    <div className="login-card">
-      <div className="login-logo">
-        <LogoMark />
-        <div>
-          <div className="login-title">RAG2 Assistant</div>
+    <div id="login-overlay">
+      <div className="login-card">
+        <div className="login-logo">
+          <LogoMark />
+          <div>
+            <div className="login-title">RAG2 Assistant</div>
+          </div>
         </div>
+        <div className="login-sub">Корпоративный ассистент по базе знаний</div>
+        <div className="login-error">{props.error}</div>
+        <div className="login-sub" style={{ marginBottom: 12 }}>
+          Вход выполняется через корпоративный SSO (Keycloak)
+        </div>
+        <button className="btn btn-primary" onClick={props.onLogin} disabled={props.busy}>
+          {props.busy ? "Переход…" : "Войти через SSO"}
+        </button>
       </div>
-      <div className="login-sub">Корпоративный ассистент по базе знаний</div>
-      <div className="login-error">{props.error}</div>
-      <input
-        className="field"
-        type="email"
-        placeholder="Корпоративный email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && props.onLogin(email, password)}
-      />
-      <input
-        className="field"
-        type="password"
-        placeholder="Пароль"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && props.onLogin(email, password)}
-      />
-      <button className="btn btn-primary" onClick={() => props.onLogin(email, password)} disabled={props.busy}>
-        {props.busy ? "Вход…" : "Войти"}
-      </button>
     </div>
   );
 }
@@ -103,19 +92,9 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
 
 function UsersTab({ deps, showToast }: { deps: Department[]; showToast: (t: string, kind: string) => void }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [editing, setEditing] = useState<AdminUser | "new" | null>(null);
 
   const load = () => api<AdminUser[]>("/admin/users").then(setUsers).catch((e) => showToast(e.message, "err"));
   useEffect(() => { load(); }, []);
-
-  const del = async (u: AdminUser) => {
-    if (!confirm(`Удалить пользователя ${u.email}?`)) return;
-    try {
-      await api(`/admin/users/${u.id}`, { method: "DELETE" });
-      showToast("Пользователь удалён", "ok");
-      load();
-    } catch (e) { showToast((e as Error).message, "err"); }
-  };
 
   const depName = (id: string | null) => deps.find((d) => d.id === id)?.name || "—";
 
@@ -123,29 +102,17 @@ function UsersTab({ deps, showToast }: { deps: Department[]; showToast: (t: stri
     <>
       <div className="admin-header">
         <h3>Пользователи ({users.length})</h3>
-        <button className="btn btn-primary btn-sm" onClick={() => setEditing("new")}>+ Добавить</button>
+        <span className="row-sub" title="Создание и роли — в Keycloak">управляются в Keycloak</span>
       </div>
       {users.map((u) => (
         <div className="row-item" key={u.id}>
           <div className="row-main">
             <div className="row-title">{u.full_name}</div>
-            <div className="row-sub">{u.email} · {depName(u.department_id)}</div>
+            <div className="row-sub">{u.employee_no} · {u.email} · {depName(u.department_id)}</div>
           </div>
-          {u.is_admin && <span className="badge badge-admin">admin</span>}
           {!u.is_active && <span className="badge badge-inactive">выкл</span>}
-          <button className="icon-btn" title="Редактировать" onClick={() => setEditing(u)}>✎</button>
-          <button className="icon-btn danger" title="Удалить" onClick={() => del(u)}>✕</button>
         </div>
       ))}
-      {editing && (
-        <UserModal
-          user={editing === "new" ? null : editing}
-          deps={deps}
-          onClose={() => setEditing(null)}
-          onDone={() => { setEditing(null); load(); }}
-          showToast={showToast}
-        />
-      )}
     </>
   );
 }
@@ -157,69 +124,8 @@ function UserModal({ user, deps, onClose, onDone, showToast }: {
   onDone: () => void;
   showToast: (t: string, kind: string) => void;
 }) {
-  const [email, setEmail] = useState(user?.email || "");
-  const [fullName, setFullName] = useState(user?.full_name || "");
-  const [password, setPassword] = useState("");
-  const [deptId, setDeptId] = useState(user?.department_id || "");
-  const [isAdmin, setIsAdmin] = useState(user?.is_admin || false);
-  const [busy, setBusy] = useState(false);
-
-  const save = async () => {
-    setBusy(true);
-    try {
-      if (user) {
-        const body: Record<string, unknown> = {
-          full_name: fullName,
-          department_id: deptId || null,
-          is_admin: isAdmin,
-        };
-        if (password) body.password = password;
-        await api(`/admin/users/${user.id}`, { method: "PATCH", body: JSON.stringify(body) });
-        showToast("Сохранено", "ok");
-      } else {
-        await api("/admin/users", {
-          method: "POST",
-          body: JSON.stringify({ email, full_name: fullName, password, department_id: deptId || null, is_admin: isAdmin }),
-        });
-        showToast("Пользователь создан", "ok");
-      }
-      onDone();
-    } catch (e) {
-      showToast((e as Error).message, "err");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal title={user ? "Редактировать пользователя" : "Новый пользователь"} onClose={onClose}>
-      {!user && (
-        <>
-          <label className="label">Email</label>
-          <input className="field" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ivanov@company.ru" />
-        </>
-      )}
-      <label className="label">ФИО</label>
-      <input className="field" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Иванов Иван" />
-      <label className="label">{user ? "Новый пароль (опционально)" : "Пароль"}</label>
-      <input className="field" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={user ? "Оставить без изменений" : "Пароль"} />
-      <label className="label">Департамент</label>
-      <select className="field" value={deptId} onChange={(e) => setDeptId(e.target.value)}>
-        <option value="">— без департамента —</option>
-        {deps.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-      </select>
-      <label className="checkbox-row">
-        <input type="checkbox" checked={isAdmin} onChange={(e) => setIsAdmin(e.target.checked)} />
-        Права администратора
-      </label>
-      <div className="modal-actions">
-        <button className="btn btn-ghost" onClick={onClose}>Отмена</button>
-        <button className="btn btn-primary" onClick={save} disabled={busy || (!user && (!email || !fullName || !password))}>
-          {busy ? "…" : user ? "Сохранить" : "Создать"}
-        </button>
-      </div>
-    </Modal>
-  );
+  // Пользователи управляются в Keycloak — модалка заменена справочным просмотром.
+  return null;
 }
 
 // ---------- Админ: департаменты ----------
@@ -274,6 +180,7 @@ function DeptModal({ dept, deps, onClose, onDone, showToast }: {
   onDone: () => void;
   showToast: (t: string, kind: string) => void;
 }) {
+  const [code, setCode] = useState(dept?.code || "");
   const [name, setName] = useState(dept?.name || "");
   const [parentId, setParentId] = useState(dept?.parent_id || "");
   const [busy, setBusy] = useState(false);
@@ -290,7 +197,7 @@ function DeptModal({ dept, deps, onClose, onDone, showToast }: {
       } else {
         await api("/admin/departments", {
           method: "POST",
-          body: JSON.stringify({ name, parent_id: parentId || null }),
+          body: JSON.stringify({ code, name, parent_id: parentId || null }),
         });
         showToast("Департамент создан", "ok");
       }
@@ -304,6 +211,12 @@ function DeptModal({ dept, deps, onClose, onDone, showToast }: {
 
   return (
     <Modal title={dept ? "Редактировать департамент" : "Новый департамент"} onClose={onClose}>
+      {!dept && (
+        <>
+          <label className="label">Код (формат ДЕП-хххх, из LDAP)</label>
+          <input className="field" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="ДЕП-0600" />
+        </>
+      )}
       <label className="label">Название</label>
       <input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Маркетинг" />
       <label className="label">Родительский департамент</label>
@@ -313,7 +226,7 @@ function DeptModal({ dept, deps, onClose, onDone, showToast }: {
       </select>
       <div className="modal-actions">
         <button className="btn btn-ghost" onClick={onClose}>Отмена</button>
-        <button className="btn btn-primary" onClick={save} disabled={busy || !name}>
+        <button className="btn btn-primary" onClick={save} disabled={busy || !name || (!dept && !/^ДЕП-\d{4}$/.test(code))}>
           {busy ? "…" : dept ? "Сохранить" : "Создать"}
         </button>
       </div>
@@ -351,10 +264,9 @@ function AdminPanel({ showToast }: { showToast: (t: string, kind: string) => voi
 // ---------- Приложение ----------
 
 function App() {
-  const [authed, setAuthed] = useState(!!getToken());
+  const [authed, setAuthed] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const [me, setMe] = useState<Me | null>(null);
-  const [loginBusy, setLoginBusy] = useState(false);
-  const [loginError, setLoginError] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -373,6 +285,16 @@ function App() {
     toastTimer.current = window.setTimeout(() => setToast(null), 3200);
   };
 
+  // SSO-инициализация: обработка code из Keycloak + проверка текущего токена
+  useEffect(() => {
+    initAuth().finally(() => setAuthReady(true));
+  }, []);
+
+  useEffect(() => {
+    if (!authReady) return;
+    setAuthed(isTokenValid());
+  }, [authReady]);
+
   useEffect(() => {
     if (!authed) return;
     api<Me>("/auth/me")
@@ -390,22 +312,13 @@ function App() {
     chatRef.current?.scrollTo(0, chatRef.current.scrollHeight);
   }, [messages]);
 
-  const handleLogin = async (email: string, password: string) => {
-    setLoginError("");
-    setLoginBusy(true);
-    try {
-      await login(email, password);
-      setAuthed(true);
-    } catch (e) {
-      setLoginError((e as Error).message);
-    } finally {
-      setLoginBusy(false);
-    }
+  const handleLogin = () => {
+    // редирект на Keycloak (PKCE), возврат — в initAuth
+    login();
   };
 
   const handleLogout = () => {
-    clearToken();
-    location.reload();
+    logout();
   };
 
   const handleUpload = async (file: File) => {
@@ -486,11 +399,10 @@ function App() {
     }
   };
 
+  if (!authReady) return null;
   if (!authed) {
     return (
-      <div id="login-overlay">
-        <LoginCard onLogin={handleLogin} error={loginError} busy={loginBusy} />
-      </div>
+      <LoginScreen onLogin={handleLogin} error="" busy={false} />
     );
   }
 

@@ -12,10 +12,12 @@ class Settings(BaseSettings):
     debug: bool = False
     cors_origins: str = "http://localhost:5173"
 
-    # Auth
-    jwt_secret_key: str
-    jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 480
+    # Keycloak SSO (аутентификация только здесь; backend — resource server)
+    # issuer — для серверной валидации (сеть compose/контур),
+    # public_issuer — какой отдавать браузеру (через nginx или напрямую на Mac)
+    keycloak_issuer: str = "http://keycloak:8080/realms/rag2"
+    keycloak_public_issuer: str | None = None
+    keycloak_client_id: str = "rag2_client"
 
     # Data plane
     database_url: str

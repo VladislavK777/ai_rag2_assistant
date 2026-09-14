@@ -6,7 +6,12 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import get_current_user, get_db, require_admin
+from app.core.security import (
+    get_current_user,
+    get_db,
+    get_identity,
+    require_admin,
+)
 from app.db.audit import audit
 from app.db.models import Permission, User, Workspace
 
@@ -30,7 +35,7 @@ class PermissionGrant(BaseModel):
 
 @workspaces_router.get("/workspaces")
 async def list_workspaces(
-    user: User = Depends(get_current_user),
+    identity: tuple[User, dict] = Depends(get_identity),
     db: AsyncSession = Depends(get_db),
 ):
     """Список workspace, доступных пользователю (для селектора в UI).
@@ -39,7 +44,8 @@ async def list_workspaces(
     """
     from app.core.security import get_user_acl
 
-    acl = await get_user_acl(db, user)
+    user, claims = identity
+    acl = await get_user_acl(db, user, is_admin=claims.get("is_admin", False))
     rows = (
         await db.execute(select(Workspace).where(Workspace.id.in_(
             uuid.UUID(w) for w in acl["workspace_ids"]
@@ -94,12 +100,14 @@ async def grant_permission(
 
     redis = aioredis.from_url(get_settings().redis_url, decode_responses=True)
     if body.user_id:
-        await redis.delete(f"acl:{body.user_id}")
+        await redis.delete(f"acl:{body.user_id}:employee")
+        await redis.delete(f"acl:{body.user_id}:admin")
     else:
         # Инвалидация кэша всех пользователей департамента
         users = (await db.execute(select(User).where(User.department_id == body.department_id))).scalars()
         for u in users:
-            await redis.delete(f"acl:{u.id}")
+            await redis.delete(f"acl:{u.id}:employee")
+            await redis.delete(f"acl:{u.id}:admin")
     await redis.aclose()
     return {"granted": True}
 

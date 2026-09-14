@@ -35,23 +35,25 @@ cd RAG2
 
 # 2. Конфигурация
 cp infra/.env.example infra/.env   # заполнить секреты (либо использовать Vault)
-# минимально: POSTGRES_PASSWORD, JWT_SECRET_KEY, ADMIN_PASSWORD
+# минимально: POSTGRES_PASSWORD, KEYCLOAK_ADMIN_PASSWORD, MINIO_ROOT_PASSWORD
 
-# 3. Поднять весь стек
+# 3. Поднять весь стек (включая Keycloak с realm rag2)
 cd infra && docker compose up -d
 
 # 4. Проверка здоровья
 curl http://localhost:8000/health       # backend
 curl http://localhost:8000/metrics      # Prometheus-метрики
+curl http://localhost:8080/health/ready # Keycloak (SSO)
 # Grafana: http://localhost:3000 (admin / из .env)
 # Qdrant:  http://localhost:6333/dashboard
 
-# 5. Загрузить демо-документы
-curl -X POST http://localhost:8000/api/v1/ingest/upload \
-  -H "Authorization: Bearer $TOKEN" -F "file=@report.pdf" -F "collection=general"
+# 5. Справочники и права (департаменты ДЕП-хххх, workspace'ы, ACL)
+docker compose exec backend python -m app.db.bootstrap
+docker compose exec backend python -m app.db.seed_demo
 
-# 6. Открыть UI
-open http://localhost:5173
+# 6. Открыть UI — вход через SSO (демо-пользователи в Keycloak, пароль Demo-2026!)
+open https://localhost
+# Администратор системы: Иванов Иван Иванович (ivanov@company.ru) — роль ADMIN
 ```
 
 Подробная инструкция по развёртыванию: **[infra/README.md](infra/README.md)** (включая вариант Yandex Cloud).
@@ -67,7 +69,8 @@ open http://localhost:5173
 | Orchestration | LangGraph 1.2 (Stateful Agent) | [ADR-004](docs/adr/ADR-004_Оркестрация_и_когнитивная_архитектура.md) |
 | STT | GigaAM v2 CTC (русский, NVIDIA NeMo) | ADR-002 |
 | Guardrails | Llama Guard 3 8B + Presidio PII + regex | [ADR-006](docs/adr/ADR-006_Guardrails_и_безопасность.md) |
-| API Gateway | Kong 3.x | [ADR-001](docs/adr/ADR-001_Общий_стиль_архитектуры.md) |
+| API Gateway | nginx 1.29 (TLS, маршрутизация, rate limiting) | [ADR-001](docs/adr/ADR-001_Общий_стиль_архитектуры.md) |
+| SSO / Аутентификация | Keycloak (OIDC, PKCE; LDAP federation в контуре) — realm rag2, client rag2_client | ADR-001 |
 | БД | PostgreSQL 18 (метаданные, RBAC, сессии) | ADR-007 |
 | Observability | OpenTelemetry + Prometheus + Grafana + Loki | [ADR-005](docs/adr/ADR-005_Наблюдаемость_и_логирование.md) |
 | Secrets | HashiCorp Vault | ADR-001 |

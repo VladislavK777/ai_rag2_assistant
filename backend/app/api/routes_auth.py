@@ -1,88 +1,59 @@
-"""Аутентификация: login, регистрация администратором, bootstrap."""
+"""Аутентификация: SSO Keycloak (LDAP). Backend — resource server.
+
+Логин выполняется фронтом через Keycloak (authorization code + PKCE,
+client_id rag2_client) — здесь только валидация токена и профиль.
+"""
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
-from sqlalchemy import select
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import (
-    create_access_token,
-    get_current_user,
-    get_db,
-    hash_password,
-    verify_password,
-)
-from app.db.audit import audit
-from app.db.models import Role, User
+from app.core.config import get_settings
+from app.core.keycloak import claims_to_dto, decode_token
+from app.core.security import get_current_user, get_db
+from app.db.models import User
 
 router = APIRouter()
 
-
-class LoginRequest(BaseModel):
-    email: str
-    password: str
+bearer = HTTPBearer(auto_error=False)
+settings = get_settings()
 
 
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+@router.get("/config")
+async def auth_config() -> dict[str, str]:
+    """Публичные параметры SSO для фронтенда (login-редирект).
 
-
-class UserCreate(BaseModel):
-    email: str
-    full_name: str
-    password: str
-
-
-@router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
-    user = (
-        await db.execute(select(User).where(User.email == body.email))
-    ).scalar_one_or_none()
-    if not user or not user.is_active or not verify_password(body.password, user.password_hash):
-        await audit(db, user_id=None, action="login", decision="deny", resource=body.email)
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный email или пароль")
-
-    token = create_access_token(user.id, [r.name for r in user.roles])
-    await audit(db, user_id=str(user.id), action="login", decision="allow")
-    return TokenResponse(access_token=token)
-
-
-@router.get("/me")
-async def me(user: User = Depends(get_current_user)):
+    public_issuer — адрес Keycloak с точки зрения браузера (nginx /auth/
+    в контуре; на Mac — прямой порт). По умолчанию равен issuer.
+    """
     return {
-        "id": str(user.id),
-        "email": user.email,
-        "full_name": user.full_name,
-        "roles": [r.name for r in user.roles],
-        "department_id": str(user.department_id) if user.department_id else None,
+        "issuer": settings.keycloak_public_issuer or settings.keycloak_issuer,
+        "client_id": settings.keycloak_client_id,
     }
 
 
-@router.post("/users", status_code=201)
-async def create_user(
-    body: UserCreate,
-    admin: User = Depends(get_current_user),
+@router.get("/me")
+async def me(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-):
-    """Создание пользователя (LDAP-интеграция — Фаза 2)."""
-    exists = (
-        await db.execute(select(User).where(User.email == body.email))
-    ).scalar_one_or_none()
-    if exists:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Пользователь уже существует")
-
-    role = (
-        await db.execute(select(Role).where(Role.name == "user"))
-    ).scalar_one()
-    user = User(
-        email=body.email,
-        full_name=body.full_name,
-        password_hash=hash_password(body.password),
-    )
-    user.roles.append(role)
-    db.add(user)
-    await db.commit()
-    await audit(db, user_id=str(admin.id), action="user_create", resource=body.email)
-    return {"id": str(user.id), "email": user.email}
+) -> dict:
+    """Профиль из JWT-claims (идентичность — Keycloak, не БД)."""
+    if credentials is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Требуется авторизация")
+    try:
+        payload = await decode_token(credentials.credentials)
+    except JWTError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Невалидный токен")
+    dto = claims_to_dto(payload)
+    return {
+        "id": str(user.id),
+        "employee_no": dto["employee_no"],
+        "email": dto["email"],
+        "full_name": dto["full_name"],
+        "roles": ["admin"] if dto["is_admin"] else ["user"],
+        "department_id": str(user.department_id) if user.department_id else None,
+    }

@@ -16,24 +16,28 @@ flowchart TB
 
     subgraph EXT["Внешние системы"]
         direction LR
-        LDAP["AD / LDAP<br/>[External System]<br/>аутентификация"]:::external
+        KC["Keycloak (SSO)<br/>[External System]<br/>аутентификация · realm rag2<br/>LDAP federation"]:::external
+        LDAP["AD / LDAP<br/>[External System]<br/>источник идентичности"]:::external
         FS["Файловые хранилища<br/>[External System]<br/>SharePoint · Samba"]:::external
         YAN["Yandex LLM API<br/>[External System]<br/>LLM без GPU (опция)"]:::external
     end
 
-    U -->|"вопросы · документы"| RS
+    U -->|"вход через SSO · вопросы · документы"| KC
+    KC -->|"JWT (claims: ТАБ, ДЕП, ROLE)"| RS
     RS -->|"ответы с цитатами<br/>транскрипты"| U
     A -->|"управление"| RS
     I -->|"просмотр"| RS
 
-    LDAP -.->|"SSO / JWT (Фаза 2)"| RS
+    KC -.->|"federation: пользователи, группы"| LDAP
     FS -.->|"синхронизация (Фаза 2)"| RS
     YAN -.->|"fallback LLM (опция)"| RS
 ```
 
 ## Комментарии
 
-- **Персоны** — сотрудник (основной сценарий: вопрос → ответ с цитатами), администратор (workspace, права, пользователи), аудитор ИБ (просмотр append-only аудит-лога).
-- **AD / LDAP и файловые хранилища** — интеграции целевой архитектуры (Фаза 2): сейчас аутентификация — собственная (JWT, bcrypt), документы загружаются через UI/ingestion API. Показаны на контексте, чтобы границы системы были видны сразу.
+- **Персоны** — сотрудник (основной сценарий: вопрос → ответ с цитатами), администратор (workspace, права; пользователи управляются в Keycloak), аудитор ИБ (просмотр append-only аудит-лога).
+- **Keycloak** — единственная точка аутентификации (SSO). Токен содержит claims из LDAP: `employee_no` (ТАБ-хххх), `email`, `full_name`, `dept_code` (ДЕП-хххх), `role: [ADMIN|EMPLOYEE]`. Backend — resource server: валидация JWT по JWKS, локальных паролей нет.
+- **AD / LDAP** — источник идентичности через federation Keycloak; в dev/демо пользователи создаются прямо в realm.
+- **Файловые хранилища** — интеграция Фазы 2: документы загружаются через UI/ingestion API.
 - **Yandex LLM API** — фактическая внешняя система в MVP при работе без GPU: LLM-инференс уходит наружу (fallback-провайдер). На целевом on-premise контуре заменяется внутренним vLLM и из списка исчезает.
 - **Календарь встреч (Exchange)** убран из MVP-контура: приём аудио — через загрузку файла в UI, а не интеграцию с календарём.

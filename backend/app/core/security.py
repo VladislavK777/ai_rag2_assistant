@@ -1,40 +1,34 @@
-"""Безопасность: JWT, хэширование паролей, RBAC-зависимости FastAPI."""
-import uuid
-from datetime import datetime, timedelta, timezone
+"""Resource-server безопасность: JWT Keycloak → JIT-тень пользователя → RBAC/ACL.
 
+Идентичность и пароли — в Keycloak (SSO/LDAP). В PG — только теневая запись
+(кеш идентичности) для FK от history/документов/аудита и прав (Permission).
+"""
+import json
+import uuid
+from typing import Any
+
+import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.keycloak import (
+    bearer,
+    claims_to_dto,
+    decode_token,
+    user_id_from_employee_no,
+)
 from app.db.models import Department, Permission, User
 from app.db.session import make_engine, make_session_factory
 
 _settings = get_settings()
 engine = make_engine()
 SessionLocal = make_session_factory(engine)
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-bearer = HTTPBearer(auto_error=False)
 
-
-def hash_password(raw: str) -> str:
-    return pwd_context.hash(raw)
-
-
-def verify_password(raw: str, hashed: str) -> bool:
-    return pwd_context.verify(raw, hashed)
-
-
-def create_access_token(user_id: uuid.UUID, roles: list[str]) -> str:
-    payload = {
-        "sub": str(user_id),
-        "roles": roles,
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=_settings.jwt_expire_minutes),
-    }
-    return jwt.encode(payload, _settings.jwt_secret_key, algorithm=_settings.jwt_algorithm)
+ACL_CACHE_TTL = 60
 
 
 async def get_db() -> AsyncSession:
@@ -42,51 +36,108 @@ async def get_db() -> AsyncSession:
         yield session
 
 
+async def _jwc_user(db: AsyncSession, payload: dict[str, Any]) -> User:
+    """JIT-провижининг теневой записи из JWT-claims (create-or-update).
+
+    department_id подтягивается по dept_code при каждом запросе —
+    перевод сотрудника в другой отдел подхватится на следующем токене.
+    """
+    dto = claims_to_dto(payload)
+    user_id = user_id_from_employee_no(dto["employee_no"])
+
+    user = await db.get(User, user_id)
+    dept_id = None
+    if dto["dept_code"]:
+        dept = (
+            await db.execute(select(Department).where(Department.code == dto["dept_code"]))
+        ).scalar_one_or_none()
+        if dept is None:
+            # Департамент ещё не загружен справочником — создаём заглушку с кодом,
+            # имя придёт при обновлении справочника.
+            dept = Department(code=dto["dept_code"], name=dto["dept_code"])
+            db.add(dept)
+            await db.flush()
+        dept_id = dept.id
+
+    if user is None:
+        user = User(id=user_id, employee_no=dto["employee_no"], email=dto["email"],
+                    full_name=dto["full_name"], department_id=dept_id, is_active=True)
+        db.add(user)
+    else:
+        user.email = dto["email"] or user.email
+        user.full_name = dto["full_name"] or user.full_name
+        user.department_id = dept_id
+        user.is_active = True
+    await db.commit()
+    return user
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
     db: AsyncSession = Depends(get_db),
 ) -> User:
+    """Валидация JWT (JWKS Keycloak) + JIT-тень. Роли берутся из claims."""
     if credentials is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Требуется авторизация")
     try:
-        payload = jwt.decode(
-            credentials.credentials,
-            _settings.jwt_secret_key,
-            algorithms=[_settings.jwt_algorithm],
-        )
-        user_id = uuid.UUID(payload["sub"])
-    except (JWTError, KeyError, ValueError):
+        payload = await decode_token(credentials.credentials)
+    except JWTError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Невалидный токен")
 
-    user = await db.get(User, user_id)
-    if user is None or not user.is_active:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Пользователь неактивен")
+    user = await _jwc_user(db, payload)
+
+    dto = claims_to_dto(payload)
+    if not dto["employee"]:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Нет системной роли")
     return user
 
 
-async def require_admin(user: User = Depends(get_current_user)) -> User:
-    if not any(r.name == "admin" for r in user.roles):
+async def get_identity(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    db: AsyncSession = Depends(get_db),
+) -> tuple[User, dict]:
+    """(пользователь, claims) — для мест, где нужен доступ к роли из токена."""
+    if credentials is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Требуется авторизация")
+    try:
+        payload = await decode_token(credentials.credentials)
+    except JWTError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Невалидный токен")
+    user = await _jwc_user(db, payload)
+    return user, claims_to_dto(payload)
+
+
+def user_is_admin(user: User, payload_roles: list[str] | None = None) -> bool:
+    """Проверка роли — по токену, не по БД. Оставлена как хелпер для флагов."""
+    return bool(payload_roles and "ADMIN" in payload_roles)
+
+
+async def require_admin(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Требует роль ADMIN из JWT (realm- или client-роль Keycloak)."""
+    if credentials is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Требуется авторизация")
+    payload = await decode_token(credentials.credentials)
+    dto = claims_to_dto(payload)
+    if not dto["is_admin"]:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Требуются права администратора")
-    return user
+    return await _jwc_user(db, payload)
 
 
-async def get_user_acl(db: AsyncSession, user: User) -> dict:
+async def get_user_acl(db: AsyncSession, user: User, *, is_admin: bool) -> dict:
     """Собирает ACL пользователя: workspace_ids + dept_ids (с наследованием).
 
-    Результат кэшируется в Redis (TTL 60c), инвалидируется при изменении прав.
-    Возвращает структуру для Qdrant pre-filter.
+    Роль ADMIN приходит из токена, поэтому ACL-флаг пробрасывается
+    вызывающим кодом (routes), кэш ключуется с учётом роли.
+    Результат кэшируется в Redis (TTL 60c).
     """
-    import redis.asyncio as aioredis
-
-    from app.core.config import get_settings as gs
-
-    cache_key = f"acl:{user.id}"
-    redis = aioredis.from_url(gs().redis_url, decode_responses=True)
+    cache_key = f"acl:{user.id}:{'admin' if is_admin else 'employee'}"
+    redis = aioredis.from_url(_settings.redis_url, decode_responses=True)
     try:
         cached = await redis.get(cache_key)
         if cached:
-            import json
-
             return json.loads(cached)
     finally:
         await redis.aclose()
@@ -115,9 +166,7 @@ async def get_user_acl(db: AsyncSession, user: User) -> dict:
         workspace_ids |= {p.workspace_id for p in dept_perms}
 
     # Право на просмотр ПДн: уровень pii_read на workspace.
-    # Хранится в Permission.level ( pii_read | read | write | admin );
     # admin-роль видит ПДн везде без отдельного права.
-    is_admin = any(r.name == "admin" for r in user.roles)
     pii_ws = set()
     if not is_admin:
         pii_perms = (
@@ -138,23 +187,23 @@ async def get_user_acl(db: AsyncSession, user: User) -> dict:
         "pii_read_workspace_ids": (
             [str(w) for w in workspace_ids] if is_admin else [str(w) for w in pii_ws]
         ),
+        "is_admin": is_admin,
     }
 
-    redis = aioredis.from_url(gs().redis_url, decode_responses=True)
+    redis = aioredis.from_url(_settings.redis_url, decode_responses=True)
     try:
-        import json
-
-        await redis.setex(cache_key, 60, json.dumps(acl))
+        await redis.setex(cache_key, ACL_CACHE_TTL, json.dumps(acl))
     finally:
         await redis.aclose()
     return acl
 
 
 async def check_workspace_access(
-    db: AsyncSession, user: User, workspace_id: uuid.UUID, level: str = "read"
+    db: AsyncSession, user: User, is_admin: bool,
+    workspace_id: uuid.UUID, level: str = "read",
 ) -> bool:
     """Прямая проверка доступа к workspace (для admin-операций и загрузки)."""
-    if any(r.name == "admin" for r in user.roles):
+    if is_admin:
         return True
 
     level_order = {"read": 0, "write": 1, "admin": 2}
@@ -163,9 +212,9 @@ async def check_workspace_access(
     perm = (
         await db.execute(
             select(Permission).where(
-                cond,
                 (Permission.user_id == user.id)
-                | (Permission.department_id == user.department_id),
+                | (Permission.department_id == user.department_id
+                   if user.department_id else False)
             )
         )
     ).scalars().all()

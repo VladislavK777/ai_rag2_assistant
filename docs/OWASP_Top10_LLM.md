@@ -98,7 +98,7 @@ OWASP Top 10 for LLM Applications. Статусы: ✅ реализовано в
 **Риск:** DoS через дорогие LLM-вызовы.
 
 **Меры:**
-- ✅ Rate limiting в Kong (10 req/min/user)
+- ✅ Rate limiting в nginx (10 req/min/user)
 - ✅ Лимиты: max_tokens на вызов, max 5 итераций агента, max-model-len 8192
 - ✅ Ограничения загрузки: 200MB документы, 2GB аудио, whitelist форматов
 - ✅ Semaphore на concurrent LLM-запросы, очереди с приоритетами

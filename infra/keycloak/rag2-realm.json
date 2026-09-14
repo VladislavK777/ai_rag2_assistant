@@ -1,0 +1,254 @@
+{
+  "realm": "rag2",
+  "enabled": true,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "resetPasswordAllowed": true,
+  "accessTokenLifespan": 900,
+  "sslRequired": "none",
+  "roles": {
+    "realm": [
+      {
+        "name": "ADMIN",
+        "description": "Администратор системы RAG2"
+      },
+      {
+        "name": "EMPLOYEE",
+        "description": "Сотрудник"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "rag2_client",
+      "name": "RAG2 Assistant",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "rootUrl": "",
+      "redirectUris": [
+        "http://localhost/*",
+        "http://localhost:5173/*",
+        "https://localhost/*",
+        "https://rag2.company.local/*"
+      ],
+      "webOrigins": [
+        "http://localhost",
+        "http://localhost:5173",
+        "https://localhost"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://localhost/*##http://localhost/*##http://localhost:5173/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "employee_no",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "employee_no",
+            "claim.name": "employee_no",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "full_name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "full_name",
+            "claim.name": "full_name",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "dept_code",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "dept_code",
+            "claim.name": "dept_code",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "role (multi-valued)",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "role",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "ivanov",
+      "email": "ivanov@company.ru",
+      "firstName": "Иван",
+      "lastName": "Иванов",
+      "enabled": true,
+      "emailVerified": true,
+      "attributes": {
+        "employee_no": "ТАБ-0001",
+        "full_name": "Иванов Иван Иванович",
+        "dept_code": "ДЕП-0100"
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Demo-2026!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ADMIN",
+        "offline_access",
+        "uma_authorization"
+      ]
+    },
+    {
+      "username": "petrova",
+      "email": "petrova@company.ru",
+      "firstName": "Анна",
+      "lastName": "Петрова",
+      "enabled": true,
+      "emailVerified": true,
+      "attributes": {
+        "employee_no": "ТАБ-0002",
+        "full_name": "Петрова Анна Сергеевна",
+        "dept_code": "ДЕП-0200"
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Demo-2026!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "EMPLOYEE",
+        "offline_access",
+        "uma_authorization"
+      ]
+    },
+    {
+      "username": "smirnov",
+      "email": "smirnov@company.ru",
+      "firstName": "Дмитрий",
+      "lastName": "Смирнов",
+      "enabled": true,
+      "emailVerified": true,
+      "attributes": {
+        "employee_no": "ТАБ-0003",
+        "full_name": "Смирнов Дмитрий Александрович",
+        "dept_code": "ДЕП-0300"
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Demo-2026!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "EMPLOYEE",
+        "offline_access",
+        "uma_authorization"
+      ]
+    },
+    {
+      "username": "sidorov",
+      "email": "sidorov@company.ru",
+      "firstName": "Павел",
+      "lastName": "Сидоров",
+      "enabled": true,
+      "emailVerified": true,
+      "attributes": {
+        "employee_no": "ТАБ-0004",
+        "full_name": "Сидоров Павел Викторович",
+        "dept_code": "ДЕП-0110"
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Demo-2026!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "EMPLOYEE",
+        "offline_access",
+        "uma_authorization"
+      ]
+    },
+    {
+      "username": "kuznetsova",
+      "email": "kuznetsova@company.ru",
+      "firstName": "Мария",
+      "lastName": "Кузнецова",
+      "enabled": true,
+      "emailVerified": true,
+      "attributes": {
+        "employee_no": "ТАБ-0005",
+        "full_name": "Кузнецова Мария Андреевна",
+        "dept_code": "ДЕП-0400"
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Demo-2026!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "EMPLOYEE",
+        "offline_access",
+        "uma_authorization"
+      ]
+    },
+    {
+      "username": "hacker",
+      "email": "hacker@evil.net",
+      "firstName": "Злоумышленник",
+      "lastName": "Внешний",
+      "enabled": true,
+      "emailVerified": true,
+      "attributes": {
+        "employee_no": "ТАБ-9999",
+        "full_name": "Злоумышленник (внешний)"
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Demo-2026!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "offline_access",
+        "uma_authorization"
+      ]
+    }
+  ]
+}

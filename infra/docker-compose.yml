@@ -44,7 +44,7 @@ services:
     logging: *default-logging
 
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -60,7 +60,7 @@ services:
     logging: *default-logging
 
   minio-init:
-    image: minio/mc
+    image: quay.io/minio/mc:latest
     depends_on:
       minio: { condition: service_healthy }
     entrypoint: >
@@ -93,6 +93,29 @@ services:
       VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
       VAULT_ADDR: http://0.0.0.0:8200
     networks: [data]
+    logging: *default-logging
+
+  # ============ Keycloak SSO (аутентификация; LDAP federation в контуре) ============
+  # Dev-инстанс рядом со стеком: realm rag2, client rag2_client (public + PKCE),
+  # пользователи с атрибутами employee_no/dept_code (LDAP-маппинги в контуре).
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./keycloak/rag2-realm.json:/opt/keycloak/data/import/rag2-realm.json:ro
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\\nHost: localhost\\nConnection: close\\n\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    networks: [internal, data]
     logging: *default-logging
 
   # ============ GPU-сервисы (Data Plane) ============
@@ -237,9 +260,9 @@ services:
       STT_URL: http://stt:8080
       VAULT_ADDR: ${VAULT_ADDR}
       VAULT_TOKEN: ${VAULT_DEV_ROOT_TOKEN_ID}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@company.ru}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme-admin}
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://keycloak:8080/realms/rag2}
+      KEYCLOAK_PUBLIC_ISSUER: ${KEYCLOAK_PUBLIC_ISSUER:-https://localhost/auth/realms/rag2}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-rag2_client}
       CORS_ORIGINS: ${CORS_ORIGINS}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
       OTEL_SERVICE_NAME: rag2-backend
@@ -256,7 +279,6 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       QDRANT_URL: http://qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY}
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
@@ -287,7 +309,6 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}

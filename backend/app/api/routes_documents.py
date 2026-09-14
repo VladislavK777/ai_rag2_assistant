@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.security import check_workspace_access, get_current_user, get_db
+from app.core.security import check_workspace_access, get_current_user, get_db, get_identity
 from app.db.audit import audit
 from app.db.models import Document, STTJob, User
 from app.services.tasks import ingest_document, transcribe_audio
@@ -41,11 +41,13 @@ class DocumentStatus(BaseModel):
 async def upload_document(
     file: UploadFile,
     workspace_id: str,
-    user: User = Depends(get_current_user),
+    identity: tuple[User, dict] = Depends(get_identity),
     db: AsyncSession = Depends(get_db),
 ):
     """Загрузка документа → очередь индексации (асинхронно)."""
-    if not await check_workspace_access(db, user, uuid.UUID(workspace_id), level="write"):
+    user, claims = identity
+    if not await check_workspace_access(db, user, claims.get("is_admin", False),
+                                        uuid.UUID(workspace_id), level="write"):
         await audit(db, user_id=str(user.id), action="doc_upload", decision="deny",
                     resource=workspace_id)
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Нет прав на запись в это пространство")
@@ -82,11 +84,13 @@ async def upload_document(
 async def upload_audio(
     file: UploadFile,
     workspace_id: str,
-    user: User = Depends(get_current_user),
+    identity: tuple[User, dict] = Depends(get_identity),
     db: AsyncSession = Depends(get_db),
 ):
     """Загрузка аудио встречи → транскрипция → резюме → индексация."""
-    if not await check_workspace_access(db, user, uuid.UUID(workspace_id), level="write"):
+    user, claims = identity
+    if not await check_workspace_access(db, user, claims.get("is_admin", False),
+                                        uuid.UUID(workspace_id), level="write"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Нет прав на запись")
     if file.content_type not in ALLOWED_AUDIO_TYPES:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "Неподдерживаемый аудиоформат")
@@ -110,13 +114,14 @@ async def upload_audio(
 @router.get("/status/{document_id}", response_model=DocumentStatus)
 async def document_status(
     document_id: str,
-    user: User = Depends(get_current_user),
+    identity: tuple[User, dict] = Depends(get_identity),
     db: AsyncSession = Depends(get_db),
 ):
+    user, claims = identity
     doc = await db.get(Document, uuid.UUID(document_id))
     if doc is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Документ не найден")
-    if not await check_workspace_access(db, user, doc.workspace_id):
+    if not await check_workspace_access(db, user, claims.get("is_admin", False), doc.workspace_id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Нет доступа")
     return DocumentStatus(id=str(doc.id), title=doc.title, status=doc.status)
 

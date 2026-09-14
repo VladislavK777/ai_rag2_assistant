@@ -18,7 +18,7 @@
 | **Prompt Injection Detector** | Llama Guard 3 8B (классификация) + эвристики (regex на «ignore previous instructions», «system prompt», role-play атаки) | Прямые и косвенные инъекции |
 | **PII-фильтр входа** | Microsoft Presidio (NER-модель ruBERT + regex: телефоны, паспорта, СНИЛС, ИНН, карты) | Персональные данные в запросе пользователя |
 | **Топик-фильтр** | Список запрещённых тем (политики компании) | Off-topic запросы |
-| **Rate limiting** | Kong: 10 req/min/user | DoS, брутфорс |
+| **Rate limiting** | nginx: 10 req/min/user | DoS, брутфорс |
 
 **Действие при срабатывании:** запрос блокируется, пользователь получает нейтральный отказ, событие пишется в аудит-лог с trace_id.
 

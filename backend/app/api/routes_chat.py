@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import get_current_user, get_db, get_user_acl
+from app.core.security import get_current_user, get_db, get_identity, get_user_acl
 from app.db.audit import audit
 from app.db.models import Message, Session as ChatSession, User
 from app.agents.graph import run_agent
@@ -48,7 +48,7 @@ async def _get_or_create_session(
 @router.post("/stream")
 async def chat_stream(
     body: ChatRequest,
-    user: User = Depends(get_current_user),
+    identity: tuple[User, dict] = Depends(get_identity),
     db: AsyncSession = Depends(get_db),
 ):
     """SSE-эндпоинт: статус этапов + стриминг ответа.
@@ -56,7 +56,8 @@ async def chat_stream(
     Безопасность: ACL пользователя собирается здесь и передаётся в граф;
     все tool-вызовы фильтруются по нему (RBAC pre-filter в Qdrant).
     """
-    acl = await get_user_acl(db, user)
+    user, claims = identity
+    acl = await get_user_acl(db, user, is_admin=claims.get("is_admin", False))
     if body.workspace_id not in acl["workspace_ids"]:
         await audit(
             db, user_id=str(user.id), action="chat",

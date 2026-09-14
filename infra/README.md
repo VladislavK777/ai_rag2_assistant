@@ -20,7 +20,7 @@
 # Требования: Docker 24+, docker compose v2, nvidia-container-toolkit
 
 cp .env.example .env
-# Отредактируйте: POSTGRES_PASSWORD, JWT_SECRET_KEY, MINIO_ROOT_PASSWORD, GRAFANA_ADMIN_PASSWORD
+# Отредактируйте: POSTGRES_PASSWORD, KEYCLOAK_ADMIN_PASSWORD, MINIO_ROOT_PASSWORD, GRAFANA_ADMIN_PASSWORD
 # LLM_PROVIDER=local (по умолчанию)
 
 docker compose --profile gpu up -d
@@ -47,12 +47,13 @@ curl http://localhost:8000/health
 
 ## Порядок первого запуска
 
-1. `docker compose up -d postgres redis minio vault qdrant` — инфраструктура данных.
+1. `docker compose up -d postgres redis minio vault qdrant keycloak` — инфраструктура данных + SSO.
 2. `docker compose --profile gpu up -d vllm embedding guardrail stt` — GPU-сервисы (на Mac пропускается, вместо них CPU-embedding из local-override).
 3. `docker compose up -d backend ingestion-worker stt-worker frontend nginx` — приложения.
 4. `docker compose up -d otel-collector prometheus grafana loki jaeger` — наблюдаемость.
-5. Создать администратора: `docker compose exec backend python -m app.db.bootstrap` (создаёт admin из переменных `ADMIN_EMAIL`/`ADMIN_PASSWORD`).
-6. Загрузить тестовые документы через UI или API.
+5. Справочники и workspace'ы: `docker compose exec backend python -m app.db.bootstrap && docker compose exec backend python -m app.db.seed_demo`.
+   Пользователи и роли — в Keycloak (realm rag2, client rag2_client; в контуре — LDAP federation).
+6. Загрузить тестовые документы через UI (вход через SSO) или API.
 
 ## Yandex Cloud (Фаза 3)
 

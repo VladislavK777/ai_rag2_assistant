@@ -26,51 +26,42 @@ class Base(DeclarativeBase):
 
 
 class User(Base):
+    """Тень пользователя Keycloak/LDAP (идентичность и пароли — в Keycloak).
+
+    Запись JIT-создаётся/обновляется из JWT-claims при запросах.
+    id детерминирован (uuid5 от employee_no) — стабильная привязка
+    истории чатов, документов и аудита.
+    """
+
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=uid)
+    id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True)
+    employee_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     full_name: Mapped[str] = mapped_column(String(255))
     department_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID, ForeignKey("departments.id")
     )
-    password_hash: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    roles: Mapped[list["Role"]] = relationship(
-        secondary="user_roles", lazy="selectin"
-    )
     department: Mapped["Department | None"] = relationship(lazy="selectin")
 
 
 class Department(Base):
-    """Иерархия отделов — наследование прав вниз по дереву."""
+    """Иерархия отделов — наследование прав вниз по дереву.
+
+    code — корпоративный код из LDAP (ДЕП-хххх), по нему маппится
+    dept_code из JWT.
+    """
 
     __tablename__ = "departments"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=uid)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
     parent_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID, ForeignKey("departments.id")
-    )
-
-
-class Role(Base):
-    __tablename__ = "roles"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=uid)
-    name: Mapped[str] = mapped_column(String(50), unique=True)
-
-
-class UserRole(Base):
-    __tablename__ = "user_roles"
-
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID, ForeignKey("users.id"), primary_key=True
-    )
-    role_id: Mapped[uuid.UUID] = mapped_column(
-        UUID, ForeignKey("roles.id"), primary_key=True
     )
 
 
@@ -80,7 +71,9 @@ class Workspace(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=uid)
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text)
-    owner_id: Mapped[uuid.UUID] = mapped_column(UUID, ForeignKey("users.id"))
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID, ForeignKey("users.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
@@ -111,7 +104,9 @@ class Document(Base):
     title: Mapped[str] = mapped_column(String(512))
     mime_type: Mapped[str] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
-    uploaded_by: Mapped[uuid.UUID] = mapped_column(UUID, ForeignKey("users.id"))
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID, ForeignKey("users.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 

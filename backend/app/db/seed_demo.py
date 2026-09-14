@@ -1,10 +1,13 @@
-"""Демо-данные для защиты MVP: департаменты, пользователи, workspace'ы, документы.
+"""Демо-данные: департаменты (справочник), теневые пользователи Keycloak, workspace'ы, документы.
 
-Идемпотентный (повторный запуск ничего не ломает и дозаливает недостающее).
+Идемпотентный. Пользователи НЕ создаются с паролями — пароли и роли в Keycloak
+(realm rag2, client_id rag2_client); здесь заводятся теневые записи, чтобы
+права (Permission) можно было выдать до первого входа сотрудника.
+
 Запуск:
     docker compose exec backend python -m app.db.seed_demo
 Опционально:
-    SEED_SKIP_INGEST=1  — только пользователи/права, без загрузки документов
+    SEED_SKIP_INGEST=1  — только справочники/права, без загрузки документов
 """
 import asyncio
 import io
@@ -12,59 +15,77 @@ import uuid
 
 from sqlalchemy import select
 
-from app.core.security import SessionLocal, hash_password
+from app.core.security import SessionLocal
+from app.core.keycloak import user_id_from_employee_no
 from app.db.models import (
-    AuditLog,
     Department,
     Document,
     Permission,
-    Role,
     User,
     Workspace,
 )
 
-DEMO_PASSWORD = "Demo-2026!"
-
-# name → (parent_key, full_name, email, department, roles)
+# Теневые записи пользователей Keycloak (пароли — в Keycloak).
+# key → (employee_no, email, full_name, dept_key, admin?)
 USERS = {
-    "admin": {
-        "email": "admin",
-        "full_name": "Администратор RAG2",
-        "department": None,
-        "roles": ["admin"],
-    },
     "ivanov": {
+        "employee_no": "ТАБ-0001",
         "email": "ivanov@company.ru",
-        "full_name": "Иванов Сергей (ИТ)",
+        "full_name": "Иванов Иван Иванович",
         "department": "it",
-        "roles": ["user"],
+        "is_admin": True,  # администратор системы
     },
     "petrova": {
+        "employee_no": "ТАБ-0002",
         "email": "petrova@company.ru",
-        "full_name": "Петрова Анна (HR)",
+        "full_name": "Петрова Анна Сергеевна",
         "department": "hr",
-        "roles": ["user"],
+        "is_admin": False,
     },
     "smirnov": {
+        "employee_no": "ТАБ-0003",
         "email": "smirnov@company.ru",
-        "full_name": "Смирнов Дмитрий (Финансы)",
+        "full_name": "Смирнов Дмитрий Александрович",
         "department": "fin",
-        "roles": ["user"],
+        "is_admin": False,
+    },
+    "sidorov": {
+        "employee_no": "ТАБ-0004",
+        "email": "sidorov@company.ru",
+        "full_name": "Сидоров Павел Викторович",
+        "department": "it-dev",
+        "is_admin": False,
+    },
+    "kuznetsova": {
+        "employee_no": "ТАБ-0005",
+        "email": "kuznetsova@company.ru",
+        "full_name": "Кузнецова Мария Андреевна",
+        "department": "audit",
+        "is_admin": False,
     },
     "hacker": {
+        "employee_no": "ТАБ-9999",
         "email": "hacker@evil.net",
         "full_name": "Злоумышленник (внешний)",
         "department": None,
-        "roles": ["user"],
+        "is_admin": False,
     },
 }
 
-# Департаменты: key → (parent_key, name)
+# Департаменты: key → (parent_key, code, name)
 DEPARTMENTS = {
-    "company": (None, "Компания"),
-    "it": ("company", "Департамент ИТ"),
-    "hr": ("company", "Департамент HR"),
-    "fin": ("company", "Департамент финансов"),
+    "company": (None, "ДЕП-0001", "Компания"),
+    "it": ("company", "ДЕП-0100", "Департамент ИТ"),
+    "it-dev": ("it", "ДЕП-0110", "Отдел разработки"),
+    "it-ops": ("it", "ДЕП-0120", "Отдел эксплуатации"),
+    "it-sec": ("it", "ДЕП-0130", "Отдел информационной безопасности"),
+    "hr": ("company", "ДЕП-0200", "Департамент управления персоналом"),
+    "hr-kadr": ("hr", "ДЕП-0210", "Отдел кадрового администрирования"),
+    "hr-train": ("hr", "ДЕП-0220", "Отдел обучения и развития"),
+    "fin": ("company", "ДЕП-0300", "Финансовый департамент"),
+    "fin-buh": ("fin", "ДЕП-0310", "Бухгалтерия"),
+    "audit": ("company", "ДЕП-0400", "Служба внутреннего аудита"),
+    "marketing": ("company", "ДЕП-0500", "Департамент маркетинга"),
 }
 
 # Workspace'ы: key → (name, description, доступа: 'all' | 'hr' | 'fin')
@@ -170,45 +191,41 @@ async def _get_or_create(db, model, **kwargs):
 
 async def seed() -> None:
     async with SessionLocal() as db:
-        # --- Роли существуют из bootstrap ---
-        role_user = (
-            await db.execute(select(Role).where(Role.name == "user"))
-        ).scalar_one()
-        role_admin = (
-            await db.execute(select(Role).where(Role.name == "admin"))
-        ).scalar_one()
-
-        # --- Департаменты ---
+        # --- Департаменты (справочник по кодам ДЕП-хххх) ---
         depts: dict[str, Department] = {}
-        for key, (parent_key, name) in DEPARTMENTS.items():
-            dept = await _get_or_create(db, Department, name=name)
+        for key, (parent_key, code, name) in DEPARTMENTS.items():
+            dept = (
+                await db.execute(select(Department).where(Department.code == code))
+            ).scalar_one_or_none()
+            if dept is None:
+                dept = Department(code=code, name=name)
+                db.add(dept)
+                await db.flush()
+            else:
+                dept.name = name  # переименование подтягивается при повторном сиде
             if parent_key:
                 parent = depts.get(parent_key)
                 if parent is None:
-                    parent = await _get_or_create(
-                        db, Department, name=DEPARTMENTS[parent_key][1]
-                    )
+                    parent = await _get_or_create(db, Department, code=DEPARTMENTS[parent_key][1])
+                    parent.name = DEPARTMENTS[parent_key][2]
                 dept.parent_id = parent.id
             depts[key] = dept
         await db.flush()
 
-        # --- Пользователи ---
+        # --- Теневые записи пользователей Keycloak (идентичность — в Keycloak) ---
         users: dict[str, User] = {}
         for key, spec in USERS.items():
-            user = (
-                await db.execute(select(User).where(User.email == spec["email"]))
-            ).scalar_one_or_none()
+            uid = user_id_from_employee_no(spec["employee_no"])
+            user = await db.get(User, uid)
             if user is None:
                 user = User(
+                    id=uid,
+                    employee_no=spec["employee_no"],
                     email=spec["email"],
                     full_name=spec["full_name"],
-                    department_id=depts[spec["department"]].id
-                    if spec["department"]
-                    else None,
-                    password_hash=hash_password(DEMO_PASSWORD),
+                    department_id=depts[spec["department"]].id if spec["department"] else None,
                     is_active=True,
                 )
-                user.roles.append(role_admin if key == "admin" else role_user)
                 db.add(user)
                 await db.flush()
             users[key] = user
@@ -241,14 +258,15 @@ async def seed() -> None:
                 await db.execute(select(Workspace).where(Workspace.name == name))
             ).scalar_one_or_none()
             if ws is None:
-                ws = Workspace(name=name, description=desc, owner_id=users["admin"].id)
+                ws = Workspace(name=name, description=desc, owner_id=users["ivanov"].id)
                 db.add(ws)
                 await db.flush()
             ws_ids[key] = ws.id
 
-            await _ensure_perm(user_id=users["admin"].id, ws_id=ws.id, level="admin")
+            # Администратор системы (Иванов) — полный доступ
+            await _ensure_perm(user_id=users["ivanov"].id, ws_id=ws.id, level="admin")
             if access == "all":
-                for ukey in ("ivanov", "petrova", "smirnov"):
+                for ukey in ("petrova", "smirnov", "sidorov", "kuznetsova"):
                     await _ensure_perm(
                         user_id=users[ukey].id, ws_id=ws.id, level="read"
                     )
@@ -259,7 +277,8 @@ async def seed() -> None:
             await db.flush()
 
         await db.commit()
-        print("Пользователи, департаменты и права созданы/проверены.")
+        print(f"Департаментов: {len(depts)}, теневых пользователей: {len(users)}. Права созданы/проверены.")
+        print("Администратор системы (роль ADMIN в Keycloak): Иванов Иван Иванович (ТАБ-0001).")
 
     # --- Документы (MinIO + очередь индексации) ---
     import os
@@ -316,7 +335,7 @@ async def seed() -> None:
                     title=fname,
                     mime_type="text/plain",
                     status="pending",
-                    uploaded_by=users["admin"].id,
+                    uploaded_by=users["ivanov"].id,
                 )
                 db.add(doc)
                 await db.commit()

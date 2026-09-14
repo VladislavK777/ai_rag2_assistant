@@ -11,16 +11,18 @@ flowchart TB
     classDef db fill:#85BBF0,stroke:#5D82A6,color:#000
     classDef external fill:#999999,stroke:#8A8A8A,color:#fff,stroke-dasharray:4 3
 
-    U("Сотрудник"):::person --> NG["nginx<br/>TLS · proxy"]:::container
+    U("Сотрудник"):::person --> KC["Keycloak<br/>SSO · OIDC/PKCE<br/>realm rag2"]:::container
+    KC -->|"JWT (ТАБ, ДЕП, ROLE)"| U
+    U --> NG["nginx<br/>TLS · proxy"]:::container
     NG -->|"статика"| FE["Frontend<br/>React 19"]:::container
-    NG -->|"API · SSE"| API["Backend FastAPI<br/>Agent Graph · Guardrails"]:::container
+    NG -->|"API · SSE"| API["Backend FastAPI<br/>Agent Graph · Guardrails<br/>resource server"]:::container
     NG ~~~ ING
     NG ~~~ STT
 
     ING["Ingestion Worker<br/>Celery"]:::container
     STT["STT Worker<br/>Celery"]:::container
 
-    PG[("PostgreSQL 18<br/>RBAC · аудит · KG")]:::db
+    PG[("PostgreSQL 18<br/>RBAC · аудит · KG<br/>теневые записи пользователей")]:::db
     QD[("Qdrant<br/>вектора + ACL")]:::db
     S3[("MinIO<br/>файлы")]:::db
     RDS[("Redis 8<br/>брокер Celery ·<br/>ACL-кэш")]:::db
@@ -30,6 +32,7 @@ flowchart TB
     STTG["GigaAM · GPU 1<br/>STT"]:::container
     VLT["Vault<br/>секреты"]:::container
 
+    API -->|"JWKS"| KC
     API --> PG
     API --> QD
     API --> RDS
@@ -50,6 +53,8 @@ flowchart TB
 ## Комментарии
 
 - **Agent Graph (LangGraph) и Guardrails — модули Backend API**, а не отдельные контейнеры: guardrails-узлы и planner/retrieve/react работают внутри процесса uvicorn; при масштабировании выносятся без изменения кода.
+- **Keycloak** — единственная точка аутентификации: фронт получает токены по authorization code + PKCE (client `rag2_client`), backend валидирует JWT по JWKS (resource server, без introspection на каждый запрос). В контуре — LDAP federation; в dev — локальные пользователи realm.
+- **Теневые записи пользователей** — JIT-создаются в PostgreSQL из JWT-claims при первом запросе (id = uuid5 от табельного номера); нужны для FK чат-истории/документов/аудита и прав (Permission). Идентичность и пароли — только в Keycloak.
 - **Redis** — брокер очередей Celery (задачи ingest/stt попадают в workers через него) и кэш ACL (TTL 60с); на диаграмме это отражено в подписи, стрелки брокера опущены для читаемости.
 - **Упрощения потоков:** Ingestion Worker пишет метаданные в PostgreSQL, STT Worker сохраняет аудио в MinIO — эти стрелки опущены (дублируют уже показанные связи с теми же БД); полная матрица потоков — в Deployment Diagram (04).
 - **Control Plane** (Backend, workers) — stateless, масштабируется репликами; **Data Plane** — в изолированной сети (`internal: true`), GPU-сервисы поднимаются профилем `gpu`.
