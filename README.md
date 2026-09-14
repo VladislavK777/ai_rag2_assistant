@@ -54,7 +54,6 @@ docker compose exec backend python -m app.db.seed_demo
 # 6. Открыть UI — вход через SSO (демо-пользователи в Keycloak, пароль Demo-2026!)
 open https://localhost
 # Администратор системы: Иванов Иван Иванович (ivanov@company.ru) — роль ADMIN
-```
 
 Подробная инструкция по развёртыванию: **[infra/README.md](infra/README.md)** (включая вариант Yandex Cloud).
 
@@ -70,8 +69,8 @@ open https://localhost
 | STT | GigaAM v2 CTC (русский, NVIDIA NeMo) | [ADR-002](docs/adr/ADR-002_LLM_Serving.md) |
 | Guardrails | Llama Guard 3 8B + Presidio PII + regex | [ADR-006](docs/adr/ADR-006_Guardrails_и_безопасность.md) |
 | API Gateway | nginx 1.29 (TLS, маршрутизация, rate limiting) | [ADR-001](docs/adr/ADR-001_Общий_стиль_архитектуры.md) |
-| SSO / Аутентификация | Keycloak (OIDC, PKCE; LDAP federation в контуре) — realm rag2, client rag2_client | ADR-001 |
-| БД | PostgreSQL 18 (метаданные, RBAC, сессии) | ADR-007 |
+| SSO / Аутентификация | Keycloak (OIDC, PKCE; LDAP federation в контуре) — realm rag2, client rag2_client | [ADR-001](docs/adr/ADR-001_Общий_стиль_архитектуры.md) |
+| БД | PostgreSQL 18 (метаданные, RBAC, сессии) | [ADR-007](docs/adr/007_Модель_данных.md) |
 | Observability | OpenTelemetry + Prometheus + Grafana + Loki | [ADR-005](docs/adr/ADR-005_Наблюдаемость_и_логирование.md) |
 | Secrets | HashiCorp Vault | [ADR-001](docs/adr/ADR-001_Общий_стиль_архитектуры.md) |
 | Backend | Python 3.13, FastAPI, Pydantic v2 | [ADR-001](docs/adr/ADR-001_Общий_стиль_архитектуры.md) |
