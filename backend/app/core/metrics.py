@@ -10,7 +10,9 @@ from prometheus_client import Counter, Histogram
 rag2_ttft_seconds = Histogram(
     "rag2_ttft_seconds",
     "Time to first token of chat answer",
-    buckets=(0.25, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0),
+    # Верхние бакеты 34/55/89 — под CPU/Metal-профиль (локальный стенд),
+    # где TTFT достигает 40-50 c; на GPU-профиле выбирается 0.25-13
+    buckets=(0.25, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0, 34.0, 55.0, 89.0),
 )
 
 # Решения guardrails (контур 1 — input; для спанов output — тот же счётчик
