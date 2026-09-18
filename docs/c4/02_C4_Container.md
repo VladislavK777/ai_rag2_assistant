@@ -54,7 +54,6 @@ flowchart TB
 
 - **Agent Graph (LangGraph) и Guardrails — модули Backend API**, а не отдельные контейнеры: guardrails-узлы и planner/retrieve/react работают внутри процесса uvicorn; при масштабировании выносятся без изменения кода.
 - **Keycloak** — единственная точка аутентификации: фронт получает токены по authorization code + PKCE (client `rag2_client`), backend валидирует JWT по JWKS (resource server, без introspection на каждый запрос). В контуре — LDAP federation; в dev — локальные пользователи realm.
-- **Теневые записи пользователей** — JIT-создаются в PostgreSQL из JWT-claims при первом запросе (id = uuid5 от табельного номера); нужны для FK чат-истории/документов/аудита и прав (Permission). Идентичность и пароли — только в Keycloak.
 - **Redis** — брокер очередей Celery (задачи ingest/stt попадают в workers через него) и кэш ACL (TTL 60с); на диаграмме это отражено в подписи, стрелки брокера опущены для читаемости.
 - **Упрощения потоков:** Ingestion Worker пишет метаданные в PostgreSQL, STT Worker сохраняет аудио в MinIO — эти стрелки опущены (дублируют уже показанные связи с теми же БД); полная матрица потоков — в Deployment Diagram (04).
 - **Control Plane** (Backend, workers) — stateless, масштабируется репликами; **Data Plane** — в изолированной сети (`internal: true`), GPU-сервисы поднимаются профилем `gpu`.
