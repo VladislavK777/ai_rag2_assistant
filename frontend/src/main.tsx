@@ -334,9 +334,16 @@ function App() {
       for (let i = 0; i < 60; i++) {
         await new Promise((r) => setTimeout(r, 3000));
         const st = await documentStatus(id);
-        if (st.status === "indexed") {
-          setUploadStatus(`«${file.name}» проиндексирован.`);
-          showToast("Документ проиндексирован", "ok");
+        if (st.status === "enriching") {
+          // Векторный поиск готов; идёт GraphRAG-обогащение (может занять минуты)
+          setUploadStatus(`«${file.name}» доступен для поиска. Строим граф связей…`);
+          continue;
+        }
+        if (st.status === "ready" || st.status === "indexed") {
+          // "indexed" — документы, загруженные до введения статусов:
+          // поиск у них готов, повторного обогащения не будет
+          setUploadStatus(`«${file.name}» обработан полностью.`);
+          showToast("Документ готов", "ok");
           return;
         }
         if (st.status === "failed") {
@@ -348,7 +355,7 @@ function App() {
           return;
         }
       }
-      setUploadStatus(`«${file.name}» ещё индексируется…`);
+      setUploadStatus(`«${file.name}» ещё обрабатывается…`);
     } catch (e) {
       setUploadStatus("");
       showToast((e as Error).message, "err");

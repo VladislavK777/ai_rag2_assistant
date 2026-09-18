@@ -57,6 +57,29 @@ async def upload_document(
     if file.size and file.size > MAX_DOC_SIZE:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Файл больше 200MB")
 
+    # Политика дублей: документ с тем же именем в том же workspace заменяется
+    # (replace). Старый документ и его чанки удаляются, новый индексируется
+    # заново. Загрузить тот же контент под другим именем можно свободно —
+    # контентный хеш (content_hash) считается в ingestion и дедуп по контенту
+    # помечается в аудит-логе.
+    from sqlalchemy import select, delete as sa_delete
+
+    ws_uuid = uuid.UUID(workspace_id)
+    existing = (
+        await db.execute(
+            select(Document).where(
+                Document.workspace_id == ws_uuid,
+                Document.title == (file.filename or "документ"),
+            )
+        )
+    ).scalars().first()
+    if existing:
+        from app.services.tasks import delete_document_data
+
+        await delete_document_data(db, existing)
+        await audit(db, user_id=str(user.id), action="doc_replace",
+                    decision="allow", resource=str(existing.id))
+
     doc = Document(
         workspace_id=uuid.UUID(workspace_id),
         minio_key=f"documents/{workspace_id}/{uuid.uuid4()}/{file.filename}",

@@ -30,9 +30,9 @@ class GuardrailVerdict(BaseModel):
 # Эвристики прямых инъекций (первый барьер, ~0 мс).
 INJECTION_PATTERNS = [
     r"ignor\w*\s+(all\s+)?(previous|prior|above)\s+(instructions|prompts|rules)",
-    r"забуд\w*\s+(все\s+)?(предыдущ\w+|прошлы\w+)\s+(инструкци\w+|указани\w+)",
-    r"(reveal|show|print)\s+(your\s+)?(system\s+prompt|initial\s+instructions)",
-    r"(выведи|покажи|раскрой)\s+(системн\w+\s+)?(промпт|инструкци\w+)",
+    r"забуд\w*\s+(все\s+)?(предыдущ\w+|прошлы\w+|свои\s+)?\s*(инструкци\w+|указани\w+|правила)",
+    r"(reveal|show|print|give|output)\s+(me\s+)?(your\s+)?(system\s+prompt|initial\s+instructions)",
+    r"(выведи|покажи|раскрой|выдай|напиши|напечатай)\s+(мне\s+)?(свой\s+|твой\s+)?(системн\w+\s+)?(промпт|инструкци\w+)",
     r"you\s+are\s+now\s+(a|an|no longer)",
     r"ты\s+теперь\s+(не\s+)?(ассистент|модель|бот)",
     r"</?(system|assistant)\s*>",
@@ -149,8 +149,12 @@ async def input_guardrails(text: str) -> GuardrailVerdict:
                 latency_ms=int((time.monotonic() - start) * 1000),
             )
 
-        # 3. PII-маскирование входа (Presidio-recognizers + regex)
-        sanitized = mask_pii_regex(text)
+        # 3. PII-маскирование входа (Presidio-recognizers + regex).
+        # Отключается при локальном LLM (PII не покидает периметр),
+        # управляется флагом pii_masking (auto/always/never).
+        from app.core.config import get_settings as _gs
+
+        sanitized = mask_pii_regex(text) if _gs().pii_masking_enabled else text
         span.set_attribute("guardrails.decision", "allow")
         from app.core.metrics import rag2_guardrails_decisions_total
 
@@ -191,8 +195,11 @@ async def output_guardrails(answer: str, sources: list[dict]) -> GuardrailVerdic
                 latency_ms=int((time.monotonic() - start) * 1000),
             )
 
-        # 2. PII на выходе
-        masked = mask_pii_regex(answer)
+        # 2. PII на выходе — только если маскирование включено
+        # (при локальном LLM ответ уходит пользователю как есть)
+        from app.core.config import get_settings as _gs
+
+        masked = mask_pii_regex(answer) if _gs().pii_masking_enabled else answer
         span.set_attribute("guardrails.decision", "allow")
         return GuardrailVerdict(
             allowed=True,

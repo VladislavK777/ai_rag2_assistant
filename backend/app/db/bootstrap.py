@@ -22,6 +22,16 @@ async def bootstrap() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    # Миграция для существующих БД: content_hash (дедупликация документов).
+    # create_all не добавляет колонки в уже созданные таблицы.
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64)"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_documents_content_hash ON documents (content_hash)"
+        ))
+
     # Триггер append-only для audit_log
     async with engine.begin() as conn:
         await conn.execute(

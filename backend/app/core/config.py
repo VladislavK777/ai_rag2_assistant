@@ -34,6 +34,19 @@ class Settings(BaseSettings):
     # LLM-провайдер: local (vLLM, on-prem) | yandex (внешний Yandex GPT)
     llm_provider: str = "local"
 
+    # Маскирование PII перед LLM: auto = маскировать только при внешнем
+    # провайдере (yandex); always / never — принудительно.
+    # Логи и трейсы маскируются независимо от этого флага (pii_sanitizer).
+    pii_masking: str = "auto"
+
+    @property
+    def pii_masking_enabled(self) -> bool:
+        if self.pii_masking == "always":
+            return True
+        if self.pii_masking == "never":
+            return False
+        return self.llm_provider != "local"
+
     # Локальный vLLM (целевая on-prem схема)
     vllm_base_url: str = "http://vllm:8000/v1"
     vllm_model: str = "rag2-llm"

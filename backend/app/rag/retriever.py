@@ -136,7 +136,9 @@ async def rerank(query: str, candidates: list[dict], top_n: int) -> list[dict]:
     if not candidates:
         return []
     texts = [c["item"]["payload"].get("content", "") for c in candidates]
-    async with httpx.AsyncClient(timeout=30) as client:
+    # Таймаут 180 c: rerank 20-40 чанков на CPU (локальный стенд без GPU)
+    # занимает до 2 минут; старые 30 c роняли retrieval на живых данных
+    async with httpx.AsyncClient(timeout=180) as client:
         resp = await client.post(
             f"{settings.reranker_url}/rerank",
             json={"query": query, "texts": texts, "top_n": top_n, "raw_scores": True},
@@ -261,11 +263,13 @@ async def hybrid_retrieve(
         span.set_attribute("rag.chunks_retrieved", len(reranked))
         span.set_attribute("rag.latency_ms", latency_ms)
 
-        # Маскирование ПДн: чанки с pii_types отдаются с маской пользователям
-        # без права pii_read на workspace (контекст сохраняется, персоналия нет)
+        # Маскирование ПДн чанков: (1) глобальный флаг pii_masking
+        # (при локальном LLM чанки не маскируются), (2) право pii_read
+        # на workspace — остаётся значимым при любом провайдере.
         from app.guardrails.guardrails import mask_pii_regex
 
         pii_allowed = set(acl.get("pii_read_workspace_ids", []))
+        masking_on = get_settings().pii_masking_enabled
         masked_chunks = 0
 
         chunks = []
@@ -275,7 +279,7 @@ async def hybrid_retrieve(
             content = payload.get("content", "")
             pii_types = payload.get("pii_types") or []
             ws_id = payload.get("workspace_id", "")
-            if pii_types and ws_id not in pii_allowed:
+            if pii_types and masking_on and ws_id not in pii_allowed:
                 content = mask_pii_regex(content)
                 masked_chunks += 1
             chunks.append(
@@ -285,7 +289,7 @@ async def hybrid_retrieve(
                     "title": payload.get("title", ""),
                     "page": payload.get("page"),
                     "content": content,
-                    "pii_masked": bool(pii_types) and ws_id not in pii_allowed,
+                    "pii_masked": bool(pii_types) and masking_on and ws_id not in pii_allowed,
                     "score": r.get("rerank_score", r["rrf_score"]),
                 }
             )

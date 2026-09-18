@@ -104,6 +104,9 @@ class Document(Base):
     title: Mapped[str] = mapped_column(String(512))
     mime_type: Mapped[str] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    # SHA-256 нормализованного извлечённого текста — дедупликация в workspace.
+    # None, пока текст не извлечён (ingestion).
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID, ForeignKey("users.id"), nullable=True
     )

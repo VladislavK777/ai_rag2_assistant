@@ -214,14 +214,25 @@ async def upsert_chunks(
     # AsyncQdrantClient не поддерживает async with — используем явно с закрытием
     qdrant = AsyncQdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
     try:
-        if not await qdrant.collection_exists(collection):
-            await qdrant.create_collection(
-                collection_name=collection,
-                vectors_config=models.VectorParams(
-                    size=1024, distance=models.Distance.COSINE
-                ),
-                hnsw_config=models.HnswConfigDiff(m=16, ef_construct=128),
-            )
+        # Идемпотентно: две параллельные задачи на один workspace обе
+        # проходят проверку → вторая create_collection кидает 409. Повтор
+        # проверки после сбоя устраняет гонку без внешних блокировок.
+        for attempt in (1, 2):
+            try:
+                if not await qdrant.collection_exists(collection):
+                    await qdrant.create_collection(
+                        collection_name=collection,
+                        vectors_config=models.VectorParams(
+                            size=1024, distance=models.Distance.COSINE
+                        ),
+                        hnsw_config=models.HnswConfigDiff(m=16, ef_construct=128),
+                    )
+                break
+            except Exception as exc:  # noqa: BLE001 — 409/транзитный сбой Qdrant
+                if attempt == 2:
+                    raise
+                if "409" not in str(exc) and "conflict" not in str(exc).lower():
+                    raise
         payload = {**payload_base, **(acl_payload or {})}
         # Текст чанка обязателен в payload: retriever собирает контекст
         # для LLM из payload.content (без него dense-плечо даёт пустые чанки)

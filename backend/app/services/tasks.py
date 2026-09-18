@@ -23,7 +23,7 @@ def ingest_document(self, document_id: str):
 
 
 async def _ingest_document_async(document_id: str) -> None:
-    from sqlalchemy import update
+    from sqlalchemy import select, update
 
     from app.core.config import get_settings
     from app.core.security import SessionLocal
@@ -49,6 +49,36 @@ async def _ingest_document_async(document_id: str) -> None:
 
             text = extract_text(raw, doc.mime_type)
             chunks = chunk_text(text, size=512, overlap=100)
+
+            # Контентный хеш: SHA-256 нормализованного текста. Дедуп по
+            # содержимому — тот же файл под другим именем помечается в аудите,
+            # документ индексируется (не блокируем), но дубль отслеживаем.
+            import hashlib
+            import logging
+
+            normalized = "\n".join(line.strip() for line in text.splitlines() if line.strip())
+            doc.content_hash = hashlib.sha256(normalized.encode()).hexdigest()
+            dup = (
+                await db.execute(
+                    select(Document).where(
+                        Document.workspace_id == doc.workspace_id,
+                        Document.content_hash == doc.content_hash,
+                        Document.id != doc.id,
+                    )
+                )
+            ).scalars().first()
+            if dup is not None:
+                logging.getLogger("rag2.ingest").warning(
+                    "content duplicate: doc=%s duplicates=%s (title=%r)",
+                    doc.id, dup.id, dup.title,
+                )
+                from app.db.audit import audit as audit_log
+
+                await audit_log(
+                    db, user_id=None,
+                    action="doc_duplicate_detected", decision="allow",
+                    resource=str(doc.id),
+                )
 
             # Пометка чанков с ПДн: retriever маскирует их пользователям
             # без права pii_read (контекст сохраняется, персоналия — нет)
@@ -93,12 +123,13 @@ async def _ingest_document_async(document_id: str) -> None:
                 },
             )
             await db.execute(
-                update(Document).where(Document.id == doc.id).values(status="indexed")
+                update(Document).where(Document.id == doc.id).values(status="enriching")
             )
             await db.commit()
 
             # GraphRAG: экстракция сущностей/связей → graph_nodes/graph_edges.
-            # После status=indexed: сбой экстракции не влияет на доступность документа
+            # После status=enriching: векторный поиск уже работает, сбой
+            # экстракции не влияет на доступность документа
             try:
                 from app.rag.graphrag import extract_and_store
 
@@ -117,6 +148,11 @@ async def _ingest_document_async(document_id: str) -> None:
                 logging.getLogger("rag2.graphrag").exception(
                     "graph extraction failed: doc=%s", doc.id
                 )
+            # Финальный статус: документ полностью обработан (поиск + граф)
+            await db.execute(
+                update(Document).where(Document.id == doc.id).values(status="ready")
+            )
+            await db.commit()
         except Exception:
             await db.rollback()
             await db.execute(
@@ -130,6 +166,43 @@ async def _ingest_document_async(document_id: str) -> None:
 def transcribe_audio(self, job_id: str, workspace_id: str):
     """STT-пайплайн: аудио → GigaAM → резюме (LLM) → индексация в workspace."""
     _run(_transcribe_async(job_id, workspace_id))
+
+
+async def delete_document_data(db, doc) -> None:
+    """Полное удаление документа: PG (chunks+document) и точки Qdrant.
+
+    Используется политикой replace (повторная загрузка файла с тем же
+    именем в workspace) и будущим DELETE-эндпоинтом. Вызывается в
+    сессии вызывающего кода; коммит — на вызывающей стороне.
+    """
+    from qdrant_client import models as qmodels
+    from qdrant_client import AsyncQdrantClient
+    from sqlalchemy import delete as sa_delete
+
+    from app.core.config import get_settings
+    from app.db.models import Chunk, Document
+
+    settings = get_settings()
+    await db.execute(sa_delete(Chunk).where(Chunk.document_id == doc.id))
+    await db.execute(sa_delete(Document).where(Document.id == doc.id))
+    await db.commit()
+
+    collection = f"ws_{str(doc.workspace_id).replace('-', '_')}"
+    qdrant = AsyncQdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
+    try:
+        if await qdrant.collection_exists(collection):
+            await qdrant.delete(
+                collection_name=collection,
+                points_selector=qmodels.FilterSelector(
+                    filter=qmodels.Filter(must=[
+                        qmodels.FieldCondition(
+                            key="document_id", match=qmodels.MatchValue(value=str(doc.id))
+                        )
+                    ])
+                ),
+            )
+    finally:
+        await qdrant.close()
 
 
 async def _transcribe_async(job_id: str, workspace_id: str) -> None:
