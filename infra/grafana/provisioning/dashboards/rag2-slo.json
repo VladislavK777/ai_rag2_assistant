@@ -28,30 +28,38 @@
       }
     },
     {
-      "title": "Latency p50 / p95 (chat)",
-      "type": "timeseries",
-      "gridPos": {
-        "x": 8,
-        "y": 0,
-        "w": 8,
-        "h": 8
-      },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket{service=\"rag2-backend\",route=\"/stream\"}[5m]))",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        },
-        {
-          "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{service=\"rag2-backend\",route=\"/stream\"}[5m]))",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        }
-      ],
+      "title": "Chat latency p50 / p95 (full stream)",
+ "type": "timeseries",
+ "gridPos": {
+  "x": 8,
+  "y": 0,
+  "w": 8,
+  "h": 8
+ },
+ "fieldConfig": {
+  "defaults": {
+   "unit": "s"
+  },
+  "overrides": []
+ },
+ "targets": [
+  {
+   "expr": "histogram_quantile(0.50, rate(rag2_chat_stream_duration_seconds_bucket[5m]))",
+   "legendFormat": "p50",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   }
+  },
+  {
+   "expr": "histogram_quantile(0.95, rate(rag2_chat_stream_duration_seconds_bucket[5m]))",
+   "legendFormat": "p95",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   }
+  }
+ ],
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"

@@ -43,3 +43,13 @@ http_request_duration_seconds = Histogram(
     ["service", "route"],
     buckets=(0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
 )
+
+# Полная длительность SSE-стрима чата: от старта generate() до последнего
+# события (включая сохранение ответа и аудит). http_request_duration_seconds
+# для /stream фиксирует только время до начала стрима (артефакт middleware),
+# поэтому реальный latency чата — эта метрика.
+rag2_chat_stream_duration_seconds = Histogram(
+    "rag2_chat_stream_duration_seconds",
+    "Full chat SSE stream duration (start to last event)",
+    buckets=(1.0, 5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 90.0, 120.0, 180.0, 300.0),
+)

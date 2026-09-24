@@ -116,6 +116,11 @@ async def chat_stream(
         )
         await db.commit()
         await audit(db, user_id=str(user.id), action="chat", decision="allow")
+        # Полная длительность стрима: от старта generate() до последнего события.
+        # В finally — чтобы зафиксировать и оборванные по ошибке стримы.
+        from app.core.metrics import rag2_chat_stream_duration_seconds
+
+        rag2_chat_stream_duration_seconds.observe(time.monotonic() - started)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
