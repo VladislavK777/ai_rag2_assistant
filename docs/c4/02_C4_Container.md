@@ -26,7 +26,7 @@ flowchart TB
     QD[("Qdrant<br/>вектора + ACL")]:::db
     S3[("MinIO<br/>файлы")]:::db
     RDS[("Redis 8<br/>брокер Celery ·<br/>ACL-кэш")]:::db
-    LLM["vLLM · GPU 0<br/>Qwen2.5-14B"]:::container
+    LLM["vLLM · GPU 0<br/>Qwen3-8B"]:::container
     EMB["TEI · GPU 0<br/>BGE-M3 · reranker"]:::container
     GUA["TEI · GPU 1<br/>Llama Guard"]:::container
     STTG["GigaAM · GPU 1<br/>STT"]:::container

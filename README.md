@@ -60,7 +60,7 @@ open https://localhost
 
 | Слой | Технология | ADR |
 |---|---|---|
-| LLM Serving | vLLM 0.28 + Qwen2.5-14B-Instruct-AWQ | [ADR-002](docs/adr/ADR-002_LLM_Serving.md) |
+| LLM Serving | vLLM 0.28 + Qwen3-8B-Instruct-AWQ | [ADR-002](docs/adr/ADR-002_LLM_Serving.md) |
 | Embeddings | BGE-M3 (dense + sparse, 1024d) | [ADR-003](docs/adr/ADR-003_Vector_DB_и_Embeddings.md) |
 | Reranker | BGE-reranker-v2-m3 | [ADR-003](docs/adr/ADR-003_Vector_DB_и_Embeddings.md) |
 | Vector DB | Qdrant 1.19 (self-hosted) | [ADR-003](docs/adr/ADR-003_Vector_DB_и_Embeddings.md) |

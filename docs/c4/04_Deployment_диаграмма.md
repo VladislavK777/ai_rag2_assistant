@@ -59,7 +59,7 @@ flowchart LR
 
     subgraph GPU["GPU-сервисы · 2× GPU 24 GB (профиль gpu)"]
         direction LR
-        LLM["vLLM<br/>Qwen2.5-14B-AWQ · GPU 0"]:::container
+        LLM["vLLM<br/>Qwen3-8B-AWQ · GPU 0"]:::container
         EMB["TEI<br/>BGE-M3 · GPU 0"]:::container
         RR["TEI<br/>reranker · GPU 0"]:::container
         GU["TEI<br/>Llama Guard · GPU 1"]:::container
@@ -116,7 +116,7 @@ flowchart LR
 
 | GPU | VRAM | Нагрузка |
 |---|---|---|
-| GPU 0 | 24 GB | vLLM Qwen2.5-14B-AWQ (~9 GB) + BGE-M3 (~2.2 GB) + reranker (~2.2 GB) + KV-cache |
+| GPU 0 | 24 GB | vLLM Qwen3-8B-AWQ (~5 GB) + BGE-M3 (~2.2 GB) + reranker (~2.2 GB) + KV-cache |
 | GPU 1 | 24 GB | Llama Guard (~5 GB) + GigaAM STT (~1.5 GB) + резерв под Фазу 2 |
 
 GPU-сервисы запускаются профилем `gpu` (`docker compose --profile gpu up -d`); без GPU (локальная разработка на Mac) используется оверлей `docker-compose.local.yml` — LLM через внешний API (Yandex).
