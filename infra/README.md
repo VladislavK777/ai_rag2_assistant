@@ -37,10 +37,10 @@ curl http://localhost:8000/health
 | nginx (DMZ) | 80/443 | **да** |
 | frontend (dev-режим) | 5173 | да (только dev; в prod раздаётся nginx'ом) |
 | backend API | 8000 | через nginx |
-| Grafana | 3000 | **да** (за VPN!) |
+| Grafana | 3000 | **да** |
 | Qdrant | 6333 | нет (internal) |
 | PostgreSQL | 5432 | нет |
-| MinIO | 9000/9001 | нет (консоль — через VPN) |
+| MinIO | 9000/9001 | **да** |
 | Vault | 8200 | нет |
 | vLLM | 8010 | нет |
 | OTel Collector | 4317/4318 | нет |
